@@ -3,11 +3,9 @@
 
 import streamlit as st
 import re
-import pandas as pd
-import requests
 
-# Dados padrão caso não consiga baixar do SINAPI
-CUSTOS_PADRAO = {
+# Custo por m² por estado (UF) e padrão de acabamento (valores fixos)
+custos_por_estado = {
     "AC": {"Simples": 1900, "Médio": 2300, "Alto": 2900},
     "AL": {"Simples": 1950, "Médio": 2350, "Alto": 2950},
     "AP": {"Simples": 1920, "Médio": 2320, "Alto": 2920},
@@ -38,50 +36,20 @@ CUSTOS_PADRAO = {
     "DEFAULT": {"Simples": 2200, "Médio": 2600, "Alto": 3200}
 }
 
-# Tenta carregar dados reais do SINAPI
-@st.cache_data(ttl=86400)
-def carregar_custos_sinapi():
-    try:
-        url = "https://raw.githubusercontent.com/datasets-br/custos-sinapi/main/custos-m2-simplificado.csv"
-        df = pd.read_csv(url, sep=",")
-        custos = {}
-        for _, row in df.iterrows():
-            uf = row["UF"].strip().upper()
-            custos[uf] = {
-                "Simples": row.get("Simples", CUSTOS_PADRAO.get(uf, CUSTOS_PADRAO["DEFAULT"])["Simples"]),
-                "Médio": row.get("Medio", CUSTOS_PADRAO.get(uf, CUSTOS_PADRAO["DEFAULT"])["Médio"]),
-                "Alto": row.get("Alto", CUSTOS_PADRAO.get(uf, CUSTOS_PADRAO["DEFAULT"])["Alto"])
-            }
-        return custos
-    except Exception as e:
-        st.warning("Não foi possível atualizar os custos do SINAPI. Usando valores padrão.")
-        return CUSTOS_PADRAO
-
-custos_por_estado = carregar_custos_sinapi()
-
-# Tenta carregar cidades (IBGE)
-@st.cache_data(ttl=86400)
-def carregar_cidades():
-    try:
-        url = "https://raw.githubusercontent.com/chandez/Estados-Cidades-IBGE/master/Cidades.json"
-        cidades = requests.get(url).json()
-        cidade_para_uf = {}
-        for estado in cidades:
-            uf = estado["sigla"]
-            for cidade in estado["cidades"]:
-                cidade_para_uf[cidade.strip().lower()] = uf
-        return cidade_para_uf
-    except Exception as e:
-        st.warning("Não foi possível carregar a base de cidades. O reconhecimento automático de cidade poderá falhar.")
-        # Exemplo mínimo de cidades padrão
-        return {
-            "lavras": "MG",
-            "são paulo": "SP",
-            "rio de janeiro": "RJ",
-            "campinas": "SP"
-        }
-
-cidade_para_uf = carregar_cidades()
+# Dicionário simples de cidades para estados (UF)
+cidade_para_uf = {
+    "lavras": "MG",
+    "são paulo": "SP",
+    "campinas": "SP",
+    "rio de janeiro": "RJ",
+    "salvador": "BA",
+    "fortaleza": "CE",
+    "brasilia": "DF",
+    "curitiba": "PR",
+    "belo horizonte": "MG",
+    "manaus": "AM",
+    "porto alegre": "RS"
+}
 
 # Percentual aproximado de cada etapa da obra
 etapas = {
@@ -101,24 +69,31 @@ with st.form("formulario_orcamento"):
     area = st.number_input("Área Construída (m²)", min_value=10.0, step=1.0)
     pavimentos = st.selectbox("Número de Pavimentos", [1, 2, 3])
     padrao = st.selectbox("Padrão de Acabamento", ["Simples", "Médio", "Alto"])
-    local = st.text_input("Local da Obra (Cidade)")
+    local = st.text_input("Local da Obra (Cidade/UF)")
     submitted = st.form_submit_button("Calcular Orçamento")
 
-# Função para extrair a UF da cidade digitada
+# Função para extrair a sigla do estado (UF)
 def extrair_uf(texto):
     texto = texto.strip().lower()
-    return cidade_para_uf.get(texto, None)
+    match = re.search(r"\b([A-Z]{2})\b", texto.upper())
+    if match:
+        return match.group(1)
+    else:
+        for cidade, uf in cidade_para_uf.items():
+            if cidade in texto:
+                return uf
+    return None
 
 # Cálculo do orçamento
 if submitted:
     uf = extrair_uf(local)
-    custos_estado = custos_por_estado.get(uf, custos_por_estado.get("DEFAULT"))
+    custos_estado = custos_por_estado.get(uf, custos_por_estado["DEFAULT"])
     custo_m2 = custos_estado.get(padrao, 2600)
     custo_total = custo_m2 * area
 
     st.subheader("Resumo do Orçamento")
     st.write(f"**Tipo de Obra:** {tipo_obra}")
-    st.write(f"**Local:** {local.title()} ({uf if uf else 'UF não reconhecida'})")
+    st.write(f"**Local:** {local} ({uf if uf else 'UF não reconhecida'})")
     st.write(f"**Área:** {area:.2f} m²")
     st.write(f"**Padrão:** {padrao}")
     st.write(f"**Custo estimado por m²:** R$ {custo_m2:,.2f}")
