@@ -3,6 +3,7 @@
 
 import streamlit as st
 import re
+import pandas as pd
 
 # Custo por m² por estado (UF) e padrão de acabamento (valores simulados, base SINAPI)
 custos_por_estado = {
@@ -36,6 +37,22 @@ custos_por_estado = {
     "DEFAULT": {"Simples": 2200, "Médio": 2600, "Alto": 3200}
 }
 
+# Dicionário simples de cidades para estados (UF)
+cidade_para_uf = {
+    "lavras": "MG",
+    "são paulo": "SP",
+    "campinas": "SP",
+    "rio de janeiro": "RJ",
+    "salvador": "BA",
+    "fortaleza": "CE",
+    "brasilia": "DF",
+    "curitiba": "PR",
+    "belo horizonte": "MG",
+    "manaus": "AM",
+    "porto alegre": "RS"
+    # Adicione mais cidades conforme necessário
+}
+
 # Percentual aproximado de cada etapa da obra
 etapas = {
     "Fundação": 0.10,
@@ -59,8 +76,15 @@ with st.form("formulario_orcamento"):
 
 # Função para extrair a sigla do estado (UF)
 def extrair_uf(texto):
+    texto = texto.strip().lower()
     match = re.search(r"\b([A-Z]{2})\b", texto.upper())
-    return match.group(1) if match else None
+    if match:
+        return match.group(1)
+    else:
+        for cidade, uf in cidade_para_uf.items():
+            if cidade in texto:
+                return uf
+    return None
 
 # Cálculo do orçamento
 if submitted:
@@ -81,3 +105,25 @@ if submitted:
     for etapa, percentual in etapas.items():
         valor = custo_total * percentual
         st.write(f"{etapa}: R$ {valor:,.2f} ({percentual*100:.0f}%)")
+
+# Mapa interativo com valores médios por estado
+st.subheader("Mapa de Custos Médios por Estado")
+df_mapa = pd.DataFrame([
+    {"UF": uf, "Estado": uf, "Custo Médio R$/m²": dados["Médio"]}
+    for uf, dados in custos_por_estado.items() if uf != "DEFAULT"
+])
+df_mapa["lat"] = df_mapa["UF"].map({
+    "AC": -9.97499, "AL": -9.57131, "AP": 1.4666, "AM": -3.119, "BA": -12.9714, "CE": -3.7172,
+    "DF": -15.7801, "ES": -20.3155, "GO": -16.6864, "MA": -2.5307, "MT": -12.6819, "MS": -20.4697,
+    "MG": -19.8157, "PA": -1.4558, "PB": -7.115, "PR": -25.4284, "PE": -8.0476, "PI": -5.0892,
+    "RJ": -22.9068, "RN": -5.7945, "RS": -30.0346, "RO": -8.7608, "RR": 2.8238, "SC": -27.5954,
+    "SP": -23.5505, "SE": -10.9472, "TO": -10.1849
+})
+df_mapa["lon"] = df_mapa["UF"].map({
+    "AC": -67.8243, "AL": -35.7343, "AP": -48.4915, "AM": -60.0217, "BA": -38.5011, "CE": -38.5433,
+    "DF": -47.9292, "ES": -40.3129, "GO": -49.2643, "MA": -44.296, "MT": -55.555, "MS": -54.6465,
+    "MG": -43.9542, "PA": -48.5022, "PB": -34.8631, "PR": -49.2731, "PE": -34.877, "PI": -42.8016,
+    "RJ": -43.1729, "RN": -35.210, "RS": -51.2177, "RO": -63.9039, "RR": -60.6753, "SC": -48.548,
+    "SP": -46.6333, "SE": -37.0731, "TO": -48.3336
+})
+st.map(df_mapa.rename(columns={"lat": "latitude", "lon": "longitude"}))
